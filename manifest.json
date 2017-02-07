@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+
+  "name": "getty toolbar changes for iStock contributors",
+  "description": "Minor changes to the contributor pages for iStockers",
+  "version": "0.1.0",
+  
+  "icons": { 
+          "128": "g.png" },
+  "content_scripts": [ {
+    "js": [ "jquery-1.10.2.min.js", "theasis_getty_toolbar.user.js" ],
+    "matches": [
+      "https://contributors.gettyimages.com/*",
+	  "https://esp.gettyimages.com/*",
+	  "https://accountmanagement.gettyimages.com/*"
+	]
+  } ]
+
+}
