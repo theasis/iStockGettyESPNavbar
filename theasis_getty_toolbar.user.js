@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.1.0
+// version 0.1.1
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -8,6 +8,8 @@
 //        First version
 // v0.1.0 07 Feb 2017 Martin McCarthy
 //		  First public version
+// v0.1.1 08 Feb 2017 Martin McCarthy
+//		  Don't show media if DLs are zero
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -22,19 +24,24 @@ function main() {
 		const html=jQ(data);
 		const d=html.find("h3").eq(1);
 		let t="";
+		let media=false
 		const tr=d.next().find("tr:gt(0)");
 		tr.each(function(i){
+			media=true;
 			const l=jQ(this).find("td:first").text().trim();
 			const v=jQ(this).find("td:eq(3)").text().trim();
 			let changed=false;
 			if (currentDLs[l]>0 && v>0 && currentDLs[l]!=v) {
 				changed=true;
 			}
-			if (v>0) {
+			if (0+v>0) {
 				currentDLs[l]=v;
+				t = t + l.substring(0,1) + ":<span style='" + (changed ? "color:#44ee44" : "color:#eeeeee") +"' title='"+v+" "+l+" downloads this year"+lastUpdated()+"'>" + v + "</span> ";
 			}
-			t = t + l.substring(0,1) + ":<span style='" + (changed ? "color:#44ee44" : "color:#eeeeee") +"' title='"+v+" "+l+" downloads this year"+lastUpdated()+"'>" + v + "</span> ";
 		});
+		if (media && t.length==0) {
+			t=" 0 :-( ";
+		}
 		jQ("#theasis_DLCount").html(t);
 		window.setTimeout(updateCount, updateInterval);
 	};
