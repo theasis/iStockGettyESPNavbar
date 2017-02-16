@@ -3,10 +3,13 @@
 
   "name": "getty toolbar changes for iStock contributors",
   "description": "Minor changes to the contributor pages for iStockers",
-  "version": "0.1.1",
+  "version": "0.1.7",
   
   "icons": { 
           "128": "g.png" },
+  "permissions": [
+          "storage"
+        ],
   "content_scripts": [ {
     "js": [ "jquery-1.10.2.min.js", "theasis_getty_toolbar.user.js" ],
     "matches": [
