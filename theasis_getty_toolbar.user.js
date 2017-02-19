@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.1.7
+// version 0.1.8
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -20,6 +20,8 @@
 //		  More CSS tweaks
 // v0.1.7 16 Feb 2017
 //		  Cope with multiple pages of batches
+// v0.1.8 19 Feb 2017
+//		  Show batch breakdown when mouseover the ESP link
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -28,6 +30,10 @@ function main() {
 
 	lastUpdated = function() {
 		return "\nLast updated: "+new Date().toTimeString();
+	};
+	
+	setCss = function() {
+		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.9; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #ccc; }</style>");
 	};
 	
 	dlsPageLoaded = function(data) {
@@ -88,7 +94,8 @@ function main() {
 				reviewed:0,
 				revisable:0,
 				submitted:0
-			}
+			};
+			jQ("#theasis_batchPopup").html("<table id='theasis_batchesTable'><tbody><tr><th>Batch Name</th><th>Files</th><th>Sub'd</th><th>Rev'd</th><th>Wait</th><th>Revise</th></tr></tbody></table>");
 		}
 		stats.shownBatches += data.items.length;
 		for (const item of data.items) {
@@ -97,6 +104,16 @@ function main() {
 			stats.reviewed += item.reviewed_contributions_count;
 			stats.revisable += item.revisable_contributions_count;
 			stats.submitted += item.submitted_contributions_count;
+			
+			const updated = new Date(item.updated_at);
+			const html =
+						"<tr><td class='theasis_batchName'>"+item.submission_name+"<br>Updated: <span class='theasis_batchUpdated'>"+updated.toLocaleString()+"</span>"+
+						"</td><td class='theasis_batchCount'>"+item.contributions_count+
+						"</td><td class='theasis_batchSubs'>"+item.submitted_contributions_count+
+						"</td><td class='theasis_batchReviewed'>"+item.reviewed_contributions_count+
+						"</td><td class='theasis_batchWaiting'>"+item.contributions_awaiting_review_count+
+						"</td><td class='theasis_batchRevisable'>"+item.revisable_contributions_count+"</td></tr>";
+			jQ("#theasis_batchesTable tbody").append(html);
 		}
 		addEspToToolbar(stats);
 		if (stats.shownBatches<stats.batches) {
@@ -109,9 +126,8 @@ function main() {
 		const div=jQ("#theasis_historyPopup");
 		let date=Date.now();
 		let html="<table>";
-		for (let i=0;i<7;++i) {
+		for (let i=0;i<14;++i) {
 			const key = shortDateStr(new Date(date));
-			console.log(key);
 			if (items[key]) {
 				html += "<tr><td><i>"+key+"</i></td><td>";
 				for (let l in items[key]) {
@@ -126,7 +142,7 @@ function main() {
 	};
 	
 	showDlHistory = function() {
-		jQ("#theasis_historyPopup").show(300);
+		jQ("#theasis_historyPopup").show(100);
 		chrome.storage.sync.get(null,updateHistory);
 	};
 	
@@ -134,11 +150,19 @@ function main() {
 		jQ("#theasis_historyPopup").hide(300);
 	};
 	
-	historyCSS = "font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.9; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000;";
+	showBatches = function() {
+		jQ("#theasis_batchPopup").show(100);
+	};
+	
+	hideBatches = function() {
+		jQ("#theasis_batchPopup").hide(300);
+	};
+	
 	addCountToToolbar = function() {
 		const accountLi = jQ("nav.micro ul:first li:eq(1)");
 		const accountUrl = accountLi.find("a:first").attr("href");
-		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' style='"+historyCSS+"'>History</div>");
+		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' class='theasis_popupSummary'>History</div>");
+		jQ("body").append("<div id='theasis_batchPopup' class='theasis_popupSummary'>Batches</div>");
 		accountLi.replaceWith( "<li><a id='theasis_accountLink' href='"+accountUrl+"'><span style='color:#888888'>DLs: </span><span id='theasis_DLCount' style='color:#cccccc'></span></a></li>" );
 		jQ('#theasis_accountLink span:first').hover(
 			showDlHistory,
@@ -158,8 +182,12 @@ function main() {
 		const when=lastUpdated();
 		const espLi = jQ("nav.micro ul:first li:first");
 		const espUrl = espLi.find("a:first").attr("href");
-		let html = "<li><a href='"+espUrl+"'>ESP: <span title='Data for "+stats.shownBatches+" of "+stats.batches+" batches"+when+"'>("+stats.shownBatches+"/"+stats.batches+")</span> <span id='theasis_esp_uploaded' style='color:#888888' title='"+stats.contribs+" uploaded"+when+"'>"+stats.contribs+"</span> <span id='theasis_esp_submitted' style='color:#1aabec' title='"+stats.submitted+" submitted"+when+"'>"+stats.submitted+"</span> <span id='theasis_esp_reviewed' style='color:#53c04c' title='"+stats.reviewed+" reviewed"+when+"'>"+stats.reviewed+"</span> <span id='theasis_esp_waiting' style='color:#c09b4c' title='"+stats.awaitingReview+" awaiting review"+when+"'>"+stats.awaitingReview+"</span> <span id='theasis_esp_revisable' style='color:#c0534c' title='"+stats.revisable+" revisable"+when+"'>"+stats.revisable+"</span></a></li>";
+		let html = "<li><a id='theasis_espLink' href='"+espUrl+"'>ESP: <span title='Data for "+stats.shownBatches+" of "+stats.batches+" batches"+when+"'>("+stats.shownBatches+"/"+stats.batches+")</span> <span id='theasis_esp_uploaded' style='color:#888888' title='"+stats.contribs+" uploaded"+when+"'>"+stats.contribs+"</span> <span id='theasis_esp_submitted' style='color:#1aabec' title='"+stats.submitted+" submitted"+when+"'>"+stats.submitted+"</span> <span id='theasis_esp_reviewed' style='color:#53c04c' title='"+stats.reviewed+" reviewed"+when+"'>"+stats.reviewed+"</span> <span id='theasis_esp_waiting' style='color:#c09b4c' title='"+stats.awaitingReview+" awaiting review"+when+"'>"+stats.awaitingReview+"</span> <span id='theasis_esp_revisable' style='color:#c0534c' title='"+stats.revisable+" revisable"+when+"'>"+stats.revisable+"</span></a></li>";
 		espLi.replaceWith( html );
+		jQ('#theasis_espLink').hover(
+			showBatches,
+			hideBatches
+			);
 	};
 	
 	espAuthFail = function() {
@@ -208,6 +236,7 @@ function main() {
 		doDls();
 	};
 	
+	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
 	

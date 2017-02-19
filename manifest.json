@@ -3,7 +3,7 @@
 
   "name": "getty toolbar changes for iStock contributors",
   "description": "Minor changes to the contributor pages for iStockers",
-  "version": "0.1.7",
+  "version": "0.1.8",
   
   "icons": { 
           "128": "g.png" },
