@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.1.8
+// version 0.2.0
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -22,9 +22,12 @@
 //		  Cope with multiple pages of batches
 // v0.1.8 19 Feb 2017
 //		  Show batch breakdown when mouseover the ESP link
+// v0.2.0 19 Feb 2017
+//		  Report on Sig+ nominations and acceptances
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
+var batchHistory={};
 
 function main() {
 
@@ -84,6 +87,7 @@ function main() {
 	var page=1;	
 	var then;
 	var nowish;
+	var batchIds;
 	espDataLoaded = function(data) {
 		if (page == 1) {
 			stats = {
@@ -95,6 +99,7 @@ function main() {
 				revisable:0,
 				submitted:0
 			};
+			batchIds=[];
 			jQ("#theasis_batchPopup").html("<table id='theasis_batchesTable'><tbody><tr><th>Batch Name</th><th>Files</th><th>Sub'd</th><th>Rev'd</th><th>Wait</th><th>Revise</th></tr></tbody></table>");
 		}
 		stats.shownBatches += data.items.length;
@@ -104,10 +109,10 @@ function main() {
 			stats.reviewed += item.reviewed_contributions_count;
 			stats.revisable += item.revisable_contributions_count;
 			stats.submitted += item.submitted_contributions_count;
-			
+			batchIds.push({id:item.id,updated:item.last_submitted_at});
 			const updated = new Date(item.updated_at);
 			const html =
-						"<tr><td class='theasis_batchName'>"+item.submission_name+"<br>Updated: <span class='theasis_batchUpdated'>"+updated.toLocaleString()+"</span>"+
+						"<tr id='theasis_batchRow"+item.id+"'><td class='theasis_batchName'>"+item.submission_name+"<br>Updated: <span class='theasis_batchUpdated'>"+updated.toLocaleString()+"</span>"+
 						"</td><td class='theasis_batchCount'>"+item.contributions_count+
 						"</td><td class='theasis_batchSubs'>"+item.submitted_contributions_count+
 						"</td><td class='theasis_batchReviewed'>"+item.reviewed_contributions_count+
@@ -119,6 +124,54 @@ function main() {
 		if (stats.shownBatches<stats.batches) {
 			page += 1;
 			doDls();
+		} else {
+			checkForSplus(batchIds);
+		}
+	};
+	
+	checkForSplus = function(batchIds) {
+		for (let bidObj of batchIds) {
+			getBatch(bidObj);
+		}
+	};
+	
+	getBatch = function(bidObj) {
+		if (!batchHistory[bidObj.id] || batchHistory[bidObj.id].updated!=bidObj.updated) {
+			jQ.ajax({
+				url:"https://esp.gettyimages.com/api/submission/v1/submission_batches/"+bidObj.id+"/contributions?page=1&pages_size=200"
+			}).done(function(data){batchRead(data,bidObj)});
+		} else {
+			showSplus(bidObj.id,batchHistory[bidObj.id]['processed'],batchHistory[bidObj.id]['review']);
+
+		}
+	};
+	
+	batchRead = function(batchData,bidObj) {
+		let batch={updated:bidObj.updated};
+		let bid = bidObj.id;
+		for (let img of batchData) {
+			let file=img.file_name;
+			let splus=img.nominate_for_signature_plus;
+			let collection=img.collection_cfw_name; // "Signature"
+			let status=img.status; // "processed" | "review"
+			if (splus) {
+				if (!batch[status]) {
+					batch[status]=0;
+				}
+				++batch[status];
+			}
+		}
+		showSplus(bid,batch['processed'],batch['review']);
+		batchHistory[bid] = batch;
+		chrome.storage.local.set({'batchHistory':batchHistory});
+	};
+	
+	showSplus = function(bid,accepted,nominated) {
+		if (accepted>0) {
+			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br>('+accepted+' S+)');
+		}
+		if (nominated>0) {
+			jQ('#theasis_batchRow'+bid+' .theasis_batchWaiting').append('<br>('+nominated+' S+)');
 		}
 	};
 	
@@ -236,11 +289,18 @@ function main() {
 		doDls();
 	};
 	
+	batchHistoryLoaded = function(obj) {
+		if (obj.batchHistory) {
+			batchHistory=obj.batchHistory;
+		}
+	};
+	
+	chrome.storage.local.get('batchHistory',batchHistoryLoaded);
 	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
 	
-}
+} // main
 
 // load jQuery and kick off the meat of the code when jQuery has finished loading
 function addJQuery(callback) {
