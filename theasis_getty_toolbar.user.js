@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.0
+// version 0.2.1
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -24,6 +24,9 @@
 //		  Show batch breakdown when mouseover the ESP link
 // v0.2.0 19 Feb 2017
 //		  Report on Sig+ nominations and acceptances
+// v0.2.1 21 Feb 2017
+//		  Alert when there are unread messages
+//		  Readability tweaks to the batch pop-up
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -36,7 +39,7 @@ function main() {
 	};
 	
 	setCss = function() {
-		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.9; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #ccc; }</style>");
+		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } #theasis_messagesLink { color:#fc3; }</style>");
 	};
 	
 	dlsPageLoaded = function(data) {
@@ -112,7 +115,7 @@ function main() {
 			batchIds.push({id:item.id,updated:item.last_submitted_at});
 			const updated = new Date(item.updated_at);
 			const html =
-						"<tr id='theasis_batchRow"+item.id+"'><td class='theasis_batchName'>"+item.submission_name+"<br>Updated: <span class='theasis_batchUpdated'>"+updated.toLocaleString()+"</span>"+
+						"<tr id='theasis_batchRow"+item.id+"'><td class='theasis_batchName'>"+item.submission_name+"<br><span class='theasis_batchUpdatedLabel'>Updated: </span><span class='theasis_batchUpdated'>"+updated.toLocaleString()+"</span>"+
 						"</td><td class='theasis_batchCount'>"+item.contributions_count+
 						"</td><td class='theasis_batchSubs'>"+item.submitted_contributions_count+
 						"</td><td class='theasis_batchReviewed'>"+item.reviewed_contributions_count+
@@ -168,10 +171,10 @@ function main() {
 	
 	showSplus = function(bid,accepted,nominated) {
 		if (accepted>0) {
-			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br>('+accepted+' S+)');
+			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br><span class="theasis_batchSplus">('+accepted+' S+)</span>');
 		}
 		if (nominated>0) {
-			jQ('#theasis_batchRow'+bid+' .theasis_batchWaiting').append('<br>('+nominated+' S+)');
+			jQ('#theasis_batchRow'+bid+' .theasis_batchWaiting').append('<br><span class="theasis_batchSplus">('+nominated+' S+)</span>');
 		}
 	};
 	
@@ -204,11 +207,17 @@ function main() {
 	};
 	
 	showBatches = function() {
-		jQ("#theasis_batchPopup").show(100);
+		const trigger=jQ("#theasis_espLink").parent();
+		const popup=jQ("#theasis_batchPopup");
+		const position=trigger.position();
+		console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
+		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()-1)+"px",right:"auto"}).show(100);
 	};
 	
 	hideBatches = function() {
-		jQ("#theasis_batchPopup").hide(300);
+		if (!jQ("#theasis_batchPopup").is(":hover") && !jQ("#theasis_espLink").parent().is(":hover")) {
+			jQ("#theasis_batchPopup").hide(300);
+		}
 	};
 	
 	addCountToToolbar = function() {
@@ -216,12 +225,20 @@ function main() {
 		const accountUrl = accountLi.find("a:first").attr("href");
 		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' class='theasis_popupSummary'>History</div>");
 		jQ("body").append("<div id='theasis_batchPopup' class='theasis_popupSummary'>Batches</div>");
+		jQ('#theasis_batchPopup').hover(
+			showBatches,
+			hideBatches
+			);
 		accountLi.replaceWith( "<li><a id='theasis_accountLink' href='"+accountUrl+"'><span style='color:#888888'>DLs: </span><span id='theasis_DLCount' style='color:#cccccc'></span></a></li>" );
 		jQ('#theasis_accountLink span:first').hover(
 			showDlHistory,
 			hideDlHistory
 			);
 		updateCount();
+	};
+	
+	addMessagesToToolbar = function() {
+		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_messagesLink' href='https://accountmanagement.gettyimages.com/Messages/Messages'></a></li>");
 	};
 	
 	dlsAuthFail = function() {
@@ -237,7 +254,7 @@ function main() {
 		const espUrl = espLi.find("a:first").attr("href");
 		let html = "<li><a id='theasis_espLink' href='"+espUrl+"'>ESP: <span title='Data for "+stats.shownBatches+" of "+stats.batches+" batches"+when+"'>("+stats.shownBatches+"/"+stats.batches+")</span> <span id='theasis_esp_uploaded' style='color:#888888' title='"+stats.contribs+" uploaded"+when+"'>"+stats.contribs+"</span> <span id='theasis_esp_submitted' style='color:#1aabec' title='"+stats.submitted+" submitted"+when+"'>"+stats.submitted+"</span> <span id='theasis_esp_reviewed' style='color:#53c04c' title='"+stats.reviewed+" reviewed"+when+"'>"+stats.reviewed+"</span> <span id='theasis_esp_waiting' style='color:#c09b4c' title='"+stats.awaitingReview+" awaiting review"+when+"'>"+stats.awaitingReview+"</span> <span id='theasis_esp_revisable' style='color:#c0534c' title='"+stats.revisable+" revisable"+when+"'>"+stats.revisable+"</span></a></li>";
 		espLi.replaceWith( html );
-		jQ('#theasis_espLink').hover(
+		jQ('#theasis_espLink').parent().hover(
 			showBatches,
 			hideBatches
 			);
@@ -287,6 +304,28 @@ function main() {
 		}).done(dlsPageLoaded);
 		page=1;
 		doDls();
+		updateMessageCount();
+	};
+	
+	updateMessageCount = function() {
+		jQ.ajax({
+			url:"https://accountmanagement.gettyimages.com/Messages/GetUnreadMessageCount"
+		}).done(messagesDataLoaded);
+	};
+	
+	messagesDataLoaded = function(data) {
+		let count=0;
+		const link=jQ("#theasis_messagesLink");
+		if (data && data['UnreadCount']) {
+			count=data.UnreadCount;
+		}
+		if (count==0) {
+			link.hide();
+		} else {
+			let text="" + count + " Unread Message" + (count>1 ? "s" : "");
+			link.text(text);
+			link.show();
+		}
 	};
 	
 	batchHistoryLoaded = function(obj) {
@@ -299,6 +338,7 @@ function main() {
 	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
+	addMessagesToToolbar();
 	
 } // main
 
