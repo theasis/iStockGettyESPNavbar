@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.1
+// version 0.2.3
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -27,6 +27,10 @@
 // v0.2.1 21 Feb 2017
 //		  Alert when there are unread messages
 //		  Readability tweaks to the batch pop-up
+// v0.2.2 14 Mar 2017
+//		  Report on rejections
+// v0.2.3 17 May 2017
+//		  Report on Sig+ nominations for revised files
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -39,7 +43,7 @@ function main() {
 	};
 	
 	setCss = function() {
-		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } #theasis_messagesLink { color:#fc3; }</style>");
+		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; }</style>");
 	};
 	
 	dlsPageLoaded = function(data) {
@@ -156,15 +160,16 @@ function main() {
 			let file=img.file_name;
 			let splus=img.nominate_for_signature_plus;
 			let collection=img.collection_cfw_name; // "Signature"
-			let status=img.status; // "processed" | "review"
-			if (splus) {
+			let status=img.status; // "processed" | "review" | "revised"
+			if (status=="rejected" || splus) {
 				if (!batch[status]) {
 					batch[status]=0;
 				}
 				++batch[status];
 			}
 		}
-		showSplus(bid,batch['processed'],batch['review']);
+		showSplus(bid,batch['processed'],batch['review']+batch['revised']);
+		showRejects(bid,batch['rejected']);
 		batchHistory[bid] = batch;
 		chrome.storage.local.set({'batchHistory':batchHistory});
 	};
@@ -177,6 +182,12 @@ function main() {
 			jQ('#theasis_batchRow'+bid+' .theasis_batchWaiting').append('<br><span class="theasis_batchSplus">('+nominated+' S+)</span>');
 		}
 	};
+
+	showRejects = function(bid,rejected) {
+		if (rejected>0) {
+			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br><span class="theasis_batchReject">('+rejected+' Rej)</span>');
+		}
+	}
 	
 	updateHistory = function(items) {
 		const div=jQ("#theasis_historyPopup");
