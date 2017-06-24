@@ -33,6 +33,8 @@
 //		  Report on Sig+ nominations for revised files
 // v0.2.4 23 Jun 2017
 //		  Show YTD values in the title
+// v0.2.5 24 Jun 2017
+//        Include update time in the title
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -79,7 +81,7 @@ function main() {
 			t=" 0 :-( ";
 		}
 		jQ("#theasis_DLCount").html(t);
-		jQ("head title").text(title);
+		jQ("head title").text(title+lastUpdated());
 		let storedDLs={};
 		for (const k in currentDLs) {
 			if (currentDLs[k]!=null && currentDLs[k].current>0) {
