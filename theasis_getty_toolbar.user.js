@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.3
+// version 0.2.4
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -31,6 +31,8 @@
 //		  Report on rejections
 // v0.2.3 17 May 2017
 //		  Report on Sig+ nominations for revised files
+// v0.2.4 23 Jun 2017
+//		  Show YTD values in the title
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -50,6 +52,7 @@ function main() {
 		const html=jQ(data);
 		const d=html.find("h3").eq(1);
 		let t="";
+		let title="";
 		let media=false
 		const tr=d.next().find("tr:gt(0)");
 		tr.each(function(i){
@@ -69,12 +72,14 @@ function main() {
 			if (v>0) {
 				currentDLs[l].current=v;
 				t = t + l.substring(0,1) + ":<span style='" + (changed ? "color:#44ee44" : (currentDLs[l].changed ? "color:#66aa44" : "color:#eeeeee")) +"' title='"+v+" "+l+" downloads this year"+lastUpdated()+"\n"+currentDLs[l].history+"'>" + v + "</span> ";
+				title = title + l.substring(0,1) + ":" + (changed ? "*" : "") + v + " ";
 			}
 		});
 		if (media && t.length==0) {
 			t=" 0 :-( ";
 		}
 		jQ("#theasis_DLCount").html(t);
+		jQ("head title").text(title);
 		let storedDLs={};
 		for (const k in currentDLs) {
 			if (currentDLs[k]!=null && currentDLs[k].current>0) {
