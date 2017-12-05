@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.4
+// version 0.2.7
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -35,6 +35,9 @@
 //		  Show YTD values in the title
 // v0.2.5 24 Jun 2017
 //        Include update time in the title
+// v0.2.6 30 Jun 2017
+//        In the title, '*' indicates new DLs in the last update, '+' new DLs since the last page refresh.
+// v0.2.6 05 Dec 2017
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
@@ -74,7 +77,7 @@ function main() {
 			if (v>0) {
 				currentDLs[l].current=v;
 				t = t + l.substring(0,1) + ":<span style='" + (changed ? "color:#44ee44" : (currentDLs[l].changed ? "color:#66aa44" : "color:#eeeeee")) +"' title='"+v+" "+l+" downloads this year"+lastUpdated()+"\n"+currentDLs[l].history+"'>" + v + "</span> ";
-				title = title + l.substring(0,1) + ":" + (changed ? "*" : "") + v + " ";
+				title = title + l.substring(0,1) + ":" + (changed ? "*" : (currentDLs[l].changed ? "+" : "")) + v + " ";
 			}
 		});
 		if (media && t.length==0) {
@@ -118,6 +121,11 @@ function main() {
 		}
 		stats.shownBatches += data.items.length;
 		for (const item of data.items) {
+			if (item.status=="closed") {
+				stats.shownBatches--;
+				// console.log("closed batch");
+				continue;
+			}
 			stats.contribs += item.contributions_count;
 			stats.awaitingReview += item.contributions_awaiting_review_count;
 			stats.reviewed += item.reviewed_contributions_count;
@@ -163,6 +171,7 @@ function main() {
 	batchRead = function(batchData,bidObj) {
 		let batch={updated:bidObj.updated};
 		let bid = bidObj.id;
+		let batchStatus = bidObj.status;
 		for (let img of batchData) {
 			let file=img.file_name;
 			let splus=img.nominate_for_signature_plus;
@@ -228,7 +237,7 @@ function main() {
 		const trigger=jQ("#theasis_espLink").parent();
 		const popup=jQ("#theasis_batchPopup");
 		const position=trigger.position();
-		console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
+		// console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
 		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()-1)+"px",right:"auto"}).show(100);
 	};
 	
@@ -303,7 +312,7 @@ function main() {
 	
 	doDls = function() {
 		jQ.ajax({
-			url:"https://esp.gettyimages.com/api/submission/v1/submission_batches?date_from="+dateStr(then)+"&date_to="+dateStr(nowish)+"&page="+page+"&page_size=10&sort_column=created_at&sort_order=DESC",
+			url:"https://esp.gettyimages.com/api/submission/v1/submission_batches?date_from="+dateStr(then)+"&date_to="+dateStr(nowish)+"&page="+page+"&page_size=20&sort_column=created_at&sort_order=DESC",
 			statusCode: {
 				401: espAuthFail
 			}
@@ -312,7 +321,7 @@ function main() {
 	
 	updateCount = function() {
 		const d = new Date();
-		then = new Date(Date.now() - (1000*3600*24*28)); // 4 weeks ago
+		then = new Date(Date.now() - (1000*3600*24*7*26)); // 26 weeks ago
 		nowish = new Date(Date.now() + (1000*3600*24)); // tomorrow
 		jQ.ajax({
 			url:"https://accountmanagement.gettyimages.com/Account/Profile",
