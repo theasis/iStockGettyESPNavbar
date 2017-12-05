@@ -38,6 +38,7 @@
 // v0.2.6 30 Jun 2017
 //        In the title, '*' indicates new DLs in the last update, '+' new DLs since the last page refresh.
 // v0.2.6 05 Dec 2017
+//		  Up to 6 months or 20 entries for batch data
 //
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
