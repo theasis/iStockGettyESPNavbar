@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.7
+// version 0.2.9
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -37,9 +37,17 @@
 //        Include update time in the title
 // v0.2.6 30 Jun 2017
 //        In the title, '*' indicates new DLs in the last update, '+' new DLs since the last page refresh.
-// v0.2.6 05 Dec 2017
+// v0.2.7 05 Dec 2017
 //		  Up to 6 months or 20 entries for batch data
+// v0.2.8 09 Dec 2017
+//        Throttle back to 2 months
+//        Sanity check that we don't go back more than 5 pages
+//        Add an identifier to any URLs
+// v0.2.9 10 Dec 2017
+//        Back up to 3 months for batch data
+//        Move the ESP/YTD pop-ups down the screen slightly
 //
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.2.9"
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
 var batchHistory={};
@@ -111,6 +119,7 @@ function main() {
 			stats = {
 				batches:data.meta.total_items,
 				shownBatches:0,
+				countedBatches:0,
 				contribs:0,
 				awaitingReview:0,
 				reviewed:0,
@@ -121,6 +130,7 @@ function main() {
 			jQ("#theasis_batchPopup").html("<table id='theasis_batchesTable'><tbody><tr><th>Batch Name</th><th>Files</th><th>Sub'd</th><th>Rev'd</th><th>Wait</th><th>Revise</th></tr></tbody></table>");
 		}
 		stats.shownBatches += data.items.length;
+		stats.countedBatches += data.items.length;
 		for (const item of data.items) {
 			if (item.status=="closed") {
 				stats.shownBatches--;
@@ -144,7 +154,7 @@ function main() {
 			jQ("#theasis_batchesTable tbody").append(html);
 		}
 		addEspToToolbar(stats);
-		if (stats.shownBatches<stats.batches) {
+		if (stats.countedBatches<stats.batches && page<5) {
 			page += 1;
 			doDls();
 		} else {
@@ -161,7 +171,7 @@ function main() {
 	getBatch = function(bidObj) {
 		if (!batchHistory[bidObj.id] || batchHistory[bidObj.id].updated!=bidObj.updated) {
 			jQ.ajax({
-				url:"https://esp.gettyimages.com/api/submission/v1/submission_batches/"+bidObj.id+"/contributions?page=1&pages_size=200"
+				url:"https://esp.gettyimages.com/api/submission/v1/submission_batches/"+bidObj.id+"/contributions?page=1&pages_size=200&"+scriptID
 			}).done(function(data){batchRead(data,bidObj)});
 		} else {
 			showSplus(bidObj.id,batchHistory[bidObj.id]['processed'],batchHistory[bidObj.id]['review']);
@@ -239,7 +249,7 @@ function main() {
 		const popup=jQ("#theasis_batchPopup");
 		const position=trigger.position();
 		// console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
-		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()-1)+"px",right:"auto"}).show(100);
+		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
 	};
 	
 	hideBatches = function() {
@@ -313,7 +323,7 @@ function main() {
 	
 	doDls = function() {
 		jQ.ajax({
-			url:"https://esp.gettyimages.com/api/submission/v1/submission_batches?date_from="+dateStr(then)+"&date_to="+dateStr(nowish)+"&page="+page+"&page_size=20&sort_column=created_at&sort_order=DESC",
+			url:"https://esp.gettyimages.com/api/submission/v1/submission_batches?date_from="+dateStr(then)+"&date_to="+dateStr(nowish)+"&page="+page+"&page_size=20&sort_column=created_at&sort_order=DESC&"+scriptID,
 			statusCode: {
 				401: espAuthFail
 			}
@@ -322,10 +332,10 @@ function main() {
 	
 	updateCount = function() {
 		const d = new Date();
-		then = new Date(Date.now() - (1000*3600*24*7*26)); // 26 weeks ago
+		then = new Date(Date.now() - (1000*3600*24*7*13)); // 13 weeks ago
 		nowish = new Date(Date.now() + (1000*3600*24)); // tomorrow
 		jQ.ajax({
-			url:"https://accountmanagement.gettyimages.com/Account/Profile",
+			url:"https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID,
 			statusCode: {
 				401: dlsAuthFail
 			}
@@ -337,7 +347,7 @@ function main() {
 	
 	updateMessageCount = function() {
 		jQ.ajax({
-			url:"https://accountmanagement.gettyimages.com/Messages/GetUnreadMessageCount"
+			url:"https://accountmanagement.gettyimages.com/Messages/GetUnreadMessageCount?"+scriptID
 		}).done(messagesDataLoaded);
 	};
 	
