@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017
-// version 0.2.9
+// version 0.3.4
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -46,11 +46,18 @@
 // v0.2.9 10 Dec 2017
 //        Back up to 3 months for batch data
 //        Move the ESP/YTD pop-ups down the screen slightly
+// v0.3.4 04 Jan 2018
+//		  Track 30-day Views & Interactions
+//		  Better positioning of the DL History pop-up
+//		  Colour views/interactions to indicate rise/fall
 //
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.2.9"
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.4"
 var currentDLs={};
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
+var recentActivityUpdateInterval = 1 * 3600 * 1000; // every 1 hour
 var batchHistory={};
+var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[]};
+var espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
 
 function main() {
 
@@ -59,7 +66,7 @@ function main() {
 	};
 	
 	setCss = function() {
-		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; }</style>");
+		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; } #theasis_recentActivityTable td { color:#000; text-align:right; } </style>");
 	};
 	
 	dlsPageLoaded = function(data) {
@@ -236,7 +243,11 @@ function main() {
 	};
 	
 	showDlHistory = function() {
-		jQ("#theasis_historyPopup").show(100);
+		const popup = jQ("#theasis_historyPopup");
+		const trigger=jQ("#theasis_accountLink").parent();
+		const position=trigger.position();
+		popup.css({left:""+(position.left-50)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
+
 		chrome.storage.sync.get(null,updateHistory);
 	};
 	
@@ -256,6 +267,18 @@ function main() {
 		if (!jQ("#theasis_batchPopup").is(":hover") && !jQ("#theasis_espLink").parent().is(":hover")) {
 			jQ("#theasis_batchPopup").hide(300);
 		}
+	};	
+
+	showRecentActivityPopup = function() {
+		const trigger=jQ("#theasis_recentActivityLink").parent();
+		const popup=jQ("#theasis_recentActivityPopup");
+		const position=trigger.position();
+		// console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
+		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
+	};
+	
+	hideRecentActivityPopup = function() {
+		jQ("#theasis_recentActivityPopup").hide(300);
 	};
 	
 	addCountToToolbar = function() {
@@ -263,6 +286,7 @@ function main() {
 		const accountUrl = accountLi.find("a:first").attr("href");
 		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' class='theasis_popupSummary'>History</div>");
 		jQ("body").append("<div id='theasis_batchPopup' class='theasis_popupSummary'>Batches</div>");
+		jQ("body").append("<div id='theasis_recentActivityPopup' class='theasis_popupSummary'>Recent Activity</div>");
 		jQ('#theasis_batchPopup').hover(
 			showBatches,
 			hideBatches
@@ -277,6 +301,14 @@ function main() {
 	
 	addMessagesToToolbar = function() {
 		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_messagesLink' href='https://accountmanagement.gettyimages.com/Messages/Messages'></a></li>");
+	};
+
+	addRecentActivityToToolbar = function() {
+		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_recentActivityLink' href='https://esp.gettyimages.com/app/stats'></a></li>");
+		jQ('#theasis_recentActivityLink').parent().hover(
+			showRecentActivityPopup,
+			hideRecentActivityPopup
+			);
 	};
 	
 	dlsAuthFail = function() {
@@ -342,8 +374,84 @@ function main() {
 		}).done(dlsPageLoaded);
 		page=1;
 		doDls();
+		doRecentActivity();
 		updateMessageCount();
 	};
+
+	doRecentActivity = function() {
+		const now = Date.now();
+		// always make sure we're up-to-date if we're looking at the actual stats page
+		if (window.location.pathname.startsWith("/app/stats") || now > recentActivityHistory.lastChecked+recentActivityUpdateInterval) {
+			recentActivityHistory.lastChecked=now;
+			jQ.ajax({
+				url:espStatsUrl // scriptID is included already!
+			}).done(recentActivityLoaded);
+		}
+		showRecentActivity();
+	};
+
+	recentActivityLoaded = function(data) {
+		const now = Date.now();
+		if (!recentActivityHistory.history) {
+			recentActivityHistory.history=[];
+		}
+		const hist = recentActivityHistory.history;
+		let inter=0;
+		let views=0;
+		if (data) {
+			if (data['total_interactions']) {
+				inter = recentActivityHistory.interactions.total = data['total_interactions'];
+			}
+			if (data['total_views']) {
+				views = recentActivityHistory.views.total = data['total_views'];
+			}
+			if ((inter>0 || views>0) && (hist.length<1 || !hist[0] || hist[0].interactions!=inter || hist[0].views!=views)) {
+				if (hist.unshift({when:now,interactions:inter,views:views}) > 30) {
+					hist.pop();
+				}
+			}
+			showRecentActivity();
+			chrome.storage.local.set({'recentActivityHistory':recentActivityHistory});		
+		}
+		updateRecentActivityHistory(hist);
+	}
+
+	updateRecentActivityHistory = function(items) {
+		const div=jQ("#theasis_recentActivityPopup");
+		const oneDay=1000*60*60*24; // milliseconds in a day
+		let date=Date.now();
+		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>Interactions</th></tr>";
+		items.forEach(function(item) {
+			const d = shortDateStr(new Date(item.when - oneDay));
+			html += "<tr><td><i>"+d+"</i></td><td>"+item.views+"</td><td>"+item.interactions+"</td></tr>";
+		});
+		html += "</table>";
+		div.html(html);
+	};
+
+	showRecentActivity = function() {
+		const link=jQ("#theasis_recentActivityLink");
+		const views = recentActivityHistory.views.total;
+		const interactions = recentActivityHistory.interactions.total;
+		let viewsStyle=interStyle="#fff";
+		if (recentActivityHistory.history && recentActivityHistory.history.length>1) {
+			if (recentActivityHistory.history[1].interactions<interactions) {
+				interStyle="#53c043"
+			} else if (recentActivityHistory.history[1].interactions>interactions) {
+				interStyle="#c05343"
+			}
+			if (recentActivityHistory.history[1].views<views) {
+				viewsStyle="#53c043"
+			} else if (recentActivityHistory.history[1].views>views) {
+				viewsStyle="#c05343"
+			}
+		}
+		const text = "<span style='color:#888888'>Views:</span><span style='padding-right:1em; color:"+viewsStyle+";'>" +
+					views + "</span><span style='color:#888888'>Interactions:</span><span style='color:"+interStyle+";'>" +
+					interactions + "</span>";
+		link.html(text);
+		link.show();
+	}
 	
 	updateMessageCount = function() {
 		jQ.ajax({
@@ -372,11 +480,19 @@ function main() {
 		}
 	};
 	
+	recentActivityHistoryLoaded = function(obj) {
+		if (obj.recentActivityHistory) {
+			recentActivityHistory=obj.recentActivityHistory;
+		}
+	};
+	
 	chrome.storage.local.get('batchHistory',batchHistoryLoaded);
+	chrome.storage.local.get('recentActivityHistory',recentActivityHistoryLoaded);
 	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
 	addMessagesToToolbar();
+	addRecentActivityToToolbar();
 	
 } // main
 
