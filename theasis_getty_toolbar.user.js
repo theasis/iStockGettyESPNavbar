@@ -1,5 +1,5 @@
-// Copyright (c) Martin McCarthy 2017
-// version 0.3.4
+// Copyright (c) Martin McCarthy 2017,2018
+// version 0.3.14
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -50,13 +50,31 @@
 //		  Track 30-day Views & Interactions
 //		  Better positioning of the DL History pop-up
 //		  Colour views/interactions to indicate rise/fall
+// v0.3.9 12 Jan 2018
+//        Calculate 7-day medians of the views/interactions for a hopefully more meningful trend
+//        Calculate the trending views/interactions per day
+//		  Report on DL targets for exclusives
+// v0.3.12 13 Jan 2018
+//		  Typos in the trend changes
+// v0.3.13 20 Jan 2018
+//		  Log trend array errors
+// v0.3.14 21 Jan 2018
+//		  Log history array errors
+// 
 //
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.4"
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.14"
 var currentDLs={};
+var targetDetailsHtml="";
+var dlRates=[25,30,35,40,45];
+var dlTargets={
+	Photo:[0,550,5500,22000,330000],
+	Illustration:[0,0,4400,16500,110000],
+	Video:[0,200,1200,2750,22000]
+}
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
 var recentActivityUpdateInterval = 1 * 3600 * 1000; // every 1 hour
 var batchHistory={};
-var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[]};
+var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[],trend:[]};
 var espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
 
 function main() {
@@ -72,14 +90,21 @@ function main() {
 	dlsPageLoaded = function(data) {
 		const html=jQ(data);
 		const d=html.find("h3").eq(1);
+		const now=Date.now();
+		const year=new Date().getUTCFullYear();
+		const year_start=Date.UTC(year,0,1);
+		const day_of_year=Math.floor((now - year_start)/(1000*60*60*24))+1;
 		let t="";
 		let title="";
-		let media=false
+		let media=false;
+		let targetDetails={};
 		const tr=d.next().find("tr:gt(0)");
 		tr.each(function(i){
 			media=true;
 			const l=jQ(this).find("td:first").text().trim();
+			const excl=jQ(this).find("td:eq(2)").text().trim();
 			const v=jQ(this).find("td:eq(3)").text().trim();
+			const rrate=jQ(this).find("td:eq(4)").text().trim();
 			let changed=false;
 			if (v>0 && currentDLs[l]==null) {
 				currentDLs[l] = {current:0, changed:false, history:""};
@@ -91,6 +116,26 @@ function main() {
 				currentDLs[l].history=""+currentDLs[l].current+"&#8594;"+v+" "+now.toTimeString()+"\n"+currentDLs[l].history;
 			}
 			if (v>0) {
+				if (!excl.includes("Non")) {
+					// console.log(l + " Exclusive");
+					let currentRate=0
+					for(let i=1;i<dlRates.length;++i) {
+						if (dlTargets[l][i]>v) {
+							break;
+						}
+						currentRate=i;
+					}
+					targetDetails[l] = "<br>Current " + l + " royalty rate: " + rrate;
+					targetDetails[l] += "<br>" + (year+1) + " " + l + " royalty rate: " + dlRates[currentRate] + "%";
+					if (currentRate<dlRates.length-1) {
+						const dlsToNextTarget = dlTargets[l][currentRate+1]-v;
+						const dlsPerDay=v/day_of_year;
+						const daysToGo=Math.ceil(dlsToNextTarget/dlsPerDay);
+						targetDetails[l] += "<br>Next royalty level at " + dlTargets[l][currentRate+1] + " (" + dlsToNextTarget + " to go)." +
+							"<br>That will take " + daysToGo + " days at "+Math.round(dlsPerDay)+" DLs per day.<br>";
+					}
+					// console.log(targetDetails[l]);
+				}
 				currentDLs[l].current=v;
 				t = t + l.substring(0,1) + ":<span style='" + (changed ? "color:#44ee44" : (currentDLs[l].changed ? "color:#66aa44" : "color:#eeeeee")) +"' title='"+v+" "+l+" downloads this year"+lastUpdated()+"\n"+currentDLs[l].history+"'>" + v + "</span> ";
 				title = title + l.substring(0,1) + ":" + (changed ? "*" : (currentDLs[l].changed ? "+" : "")) + v + " ";
@@ -98,6 +143,11 @@ function main() {
 		});
 		if (media && t.length==0) {
 			t=" 0 :-( ";
+		}
+		targetDetailsHtml="";
+		jQ.each(targetDetails, function(i){ targetDetailsHtml += targetDetails[i]+"<br>"; });
+		if (jQ("#theasis_dlTargetInfo").length>0) {
+			jQ("#theasis_dlTargetInfo").html(targetDetailsHtml);
 		}
 		jQ("#theasis_DLCount").html(t);
 		jQ("head title").text(title+lastUpdated());
@@ -109,10 +159,14 @@ function main() {
 		}
 		let storedObject={};
 		storedObject[shortDateStr()]=storedDLs;
-		chrome.storage.sync.set(storedObject,
-			function(){
-				// console.log("saved DLs to sync storage");
-			});
+		try {
+			chrome.storage.sync.set(storedObject,
+				function(){
+					// console.log("saved DLs to sync storage");
+				});
+		} catch(err) {
+			console.log("sync.set failed: " + err);
+		}
 		window.setTimeout(updateCount, updateInterval);
 	};
 	
@@ -226,7 +280,7 @@ function main() {
 	updateHistory = function(items) {
 		const div=jQ("#theasis_historyPopup");
 		let date=Date.now();
-		let html="<table>";
+		let html="<div id='theasis_dlTargetInfo'>"+targetDetailsHtml+"</div><table>";
 		for (let i=0;i<14;++i) {
 			const key = shortDateStr(new Date(date));
 			if (items[key]) {
@@ -393,9 +447,17 @@ function main() {
 	recentActivityLoaded = function(data) {
 		const now = Date.now();
 		if (!recentActivityHistory.history) {
-			recentActivityHistory.history=[];
+			//recentActivityHistory.history=[];
+			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityLoaded***");
+			return;
+		}
+		if (!recentActivityHistory.trend) {
+			// recentActivityHistory.trend=[];
+			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityLoaded***");
+			return;
 		}
 		const hist = recentActivityHistory.history;
+		const trend = recentActivityHistory.trend;
 		let inter=0;
 		let views=0;
 		if (data) {
@@ -409,22 +471,28 @@ function main() {
 				if (hist.unshift({when:now,interactions:inter,views:views}) > 30) {
 					hist.pop();
 				}
+				const currentTrend=median(hist.slice(0,7));
+				if (trend.unshift({when:now,interactions:currentTrend.interactions,views:currentTrend.views}) > 370) {
+					trend.pop();
+				}
 			}
 			showRecentActivity();
 			chrome.storage.local.set({'recentActivityHistory':recentActivityHistory});		
 		}
-		updateRecentActivityHistory(hist);
+		updateRecentActivityHistory(hist,trend);
 	}
 
-	updateRecentActivityHistory = function(items) {
+	updateRecentActivityHistory = function(hist_items,trend_items) {
 		const div=jQ("#theasis_recentActivityPopup");
 		const oneDay=1000*60*60*24; // milliseconds in a day
 		let date=Date.now();
-		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>Interactions</th></tr>";
-		items.forEach(function(item) {
+		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>Trend</th><th>Interactions</th><th>Trend</th></tr>";
+		for(let i=0;i<hist_items.length;++i) {
+			item=hist_items[i];
+			trendItem=trend_items.length>i?trend_items[i]:{interactions:'-',views:'-'};
 			const d = shortDateStr(new Date(item.when - oneDay));
-			html += "<tr><td><i>"+d+"</i></td><td>"+item.views+"</td><td>"+item.interactions+"</td></tr>";
-		});
+			html += "<tr><td><i>"+d+"</i></td><td>"+item.views+"</td><td>"+trendItem.views+"</td><td>"+item.interactions+"</td><td>"+trendItem.interactions+"</td></tr>";
+		};
 		html += "</table>";
 		div.html(html);
 	};
@@ -433,6 +501,8 @@ function main() {
 		const link=jQ("#theasis_recentActivityLink");
 		const views = recentActivityHistory.views.total;
 		const interactions = recentActivityHistory.interactions.total;
+		const viewTrend = (recentActivityHistory.trend && recentActivityHistory.trend.length>1) ? recentActivityHistory.trend[0].views : null;
+		const interactionTrend = (recentActivityHistory.trend && recentActivityHistory.trend.length>1) ? recentActivityHistory.trend[0].interactions : null;
 		let viewsStyle=interStyle="#fff";
 		if (recentActivityHistory.history && recentActivityHistory.history.length>1) {
 			if (recentActivityHistory.history[1].interactions<interactions) {
@@ -446,9 +516,30 @@ function main() {
 				viewsStyle="#c05343"
 			}
 		}
-		const text = "<span style='color:#888888'>Views:</span><span style='padding-right:1em; color:"+viewsStyle+";'>" +
-					views + "</span><span style='color:#888888'>Interactions:</span><span style='color:"+interStyle+";'>" +
-					interactions + "</span>";
+		let interactionTrendInfo = viewTrendInfo = "";
+		if (viewTrend) {
+			let trendStyle="#fff";
+			if (recentActivityHistory.trend[1].views<viewTrend) {
+				trendStyle="#53c043"
+			} else if (recentActivityHistory.trend[1].views>viewTrend) {
+				trendStyle="#c05343"
+			}
+			let perday = Math.round(viewTrend/30);
+			viewTrendInfo = "<span style='color:#888;'> [</span><span style='color:"+trendStyle+";'>"+perday+"</span><span style='color:#888; padding-right:1em;'>/day] </span>";
+		}
+		if (interactionTrend) {
+			let trendStyle="#fff";
+			if (recentActivityHistory.trend[1].interactions<interactionTrend) {
+				trendStyle="#53c043"
+			} else if (recentActivityHistory.trend[1].interactions>interactionTrend) {
+				trendStyle="#c05343"
+			}
+			let perday = Math.round(interactionTrend/30);
+			interactionTrendInfo = "<span style='color:#888;'> [</span><span style='color:"+trendStyle+";'>"+perday+"</span><span style='color:#888; padding-right:1em;'>/day] </span>";
+		}
+		const text = "<span style='color:#888;'>Views:</span><span style='color:"+viewsStyle+";'>" +
+					views + "</span> " + viewTrendInfo + "</span><span style='color:#888;'>Interactions:</span><span style='color:"+interStyle+";'>" +
+					interactions + "</span>" + interactionTrendInfo;
 		link.html(text);
 		link.show();
 	}
@@ -484,6 +575,11 @@ function main() {
 		if (obj.recentActivityHistory) {
 			recentActivityHistory=obj.recentActivityHistory;
 		}
+		if (!recentActivityHistory.trend) {
+			// recentActivityHistory.trend=[];
+			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityHistoryLoaded***");
+		}
+
 	};
 	
 	chrome.storage.local.get('batchHistory',batchHistoryLoaded);
@@ -500,6 +596,26 @@ function main() {
 function addJQuery(callback) {
 	window.jQ=jQuery.noConflict(true);
 	main(); 
+}
+
+function median(values) {
+	const l=values.length;
+	const val={interactions:0,views:0};
+	if (l===0) return val;
+	values.sort(function(a,b){return a.interactions-b.interactions;});
+	const half=Math.floor(l/2);
+	if (l%2) {
+		val.interactions = values[half].interactions;
+	} else {
+		val.interactions = (values[half-1].interactions+values[half].interactions)/2;
+	}
+	values.sort(function(a,b){return a.views-b.views;});
+	if (l%2) {
+		val.views = values[half].views;
+	} else {
+		val.views = (values[half-1].views+values[half].views)/2;
+	}
+	return val;
 }
 
 addJQuery(main);
