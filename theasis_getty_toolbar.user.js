@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.3.16
+// version 0.3.19
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -64,9 +64,12 @@
 //		  Forget the whole Views/Interactions trend nonsense
 // v0.3.16 25 Jan 2018
 //		  Fixes for Account Management authorisation changes
+// v0.3.19 25 Jan 2018
+//		  Show DLs per "day"
 // 
 //
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.16"
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.19";
+var itsme=document.cookie.replace(/(?:(?:^|.*;\s*)dn\s*=\s*([^;]*).*$)|^.*$/,"$1")==="Martin+McCarthy";
 var currentDLs={};
 var targetDetailsHtml="";
 var dlRates=[25,30,35,40,45];
@@ -315,20 +318,31 @@ function main() {
 	
 	updateHistory = function(items) {
 		const div=jQ("#theasis_historyPopup");
-		let date=Date.now();
+		const oneDay=1000*3600*24;
+		let date=Date.now()-13*oneDay;
 		let html="<div id='theasis_dlTargetInfo'>"+targetDetailsHtml+"</div><table>";
+		let rowsHtml="";
+		let previousTotal={Photo:null,Illustration:null,Video:null};
 		for (let i=0;i<14;++i) {
 			const key = shortDateStr(new Date(date));
 			if (items[key]) {
-				html += "<tr><td><i>"+key+"</i></td><td>";
+				let rowHtml = "<tr><td><i>"+key+"</i></td>";
 				for (let l in items[key]) {
-					html += "<span style='padding-left:1em;'>"+l+": <b>"+items[key][l]+"</b></span>";
+					let dayDls = "";
+					dayDls=" ["+(items[key][l]-previousTotal[l])+"]";
+					if (previousTotal[l]===null) {
+						dayDls="";
+					}
+					previousTotal[l]=items[key][l];
+					rowHtml += "<td><span style='padding-left:1em;'>"+l+": <b>"+items[key][l]+dayDls+"</b></span></td>";
 				}
-				html += "</td></tr>";
+				rowHtml += "</tr>";
+
+				rowsHtml = rowHtml + rowsHtml;
 			}
-			date -= 1000*3600*24;
+			date += oneDay;
 		}
-		html += "</table>";
+		html += rowsHtml + "</table>";
 		div.html(html);
 	};
 	
@@ -550,3 +564,4 @@ function median(values) {
 }
 
 addJQuery(main);
+
