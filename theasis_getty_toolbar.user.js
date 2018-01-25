@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.3.14
+// version 0.3.16
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -60,9 +60,13 @@
 //		  Log trend array errors
 // v0.3.14 21 Jan 2018
 //		  Log history array errors
+// v0.3.15 23 Jan 2018
+//		  Forget the whole Views/Interactions trend nonsense
+// v0.3.16 25 Jan 2018
+//		  Fixes for Account Management authorisation changes
 // 
 //
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.14"
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.16"
 var currentDLs={};
 var targetDetailsHtml="";
 var dlRates=[25,30,35,40,45];
@@ -74,8 +78,10 @@ var dlTargets={
 var updateInterval = 10 * 60 * 1000; // every 10 minutes
 var recentActivityUpdateInterval = 1 * 3600 * 1000; // every 1 hour
 var batchHistory={};
-var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[],trend:[]};
+var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[]};
 var espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
+var dlsUrl="https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID;
+var dlsLoginSanityCheck=0;
 
 function main() {
 
@@ -87,7 +93,7 @@ function main() {
 		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; } #theasis_recentActivityTable td { color:#000; text-align:right; } </style>");
 	};
 	
-	dlsPageLoaded = function(data) {
+	dlsPageLoaded = function(data,textStatus,jqXHR) {
 		const html=jQ(data);
 		const d=html.find("h3").eq(1);
 		const now=Date.now();
@@ -98,6 +104,36 @@ function main() {
 		let title="";
 		let media=false;
 		let targetDetails={};
+
+		const pageLoadedValidation=html.find("form[action='/Account/Profile']").length;
+		if (pageLoadedValidation<1) {
+			const accLink=jQ("#theasis_accountLink").attr("href");
+			if (dlsLoginSanityCheck++<3) {
+				jQ.ajax({
+					url:"/ui/account_manager?path=Account/Profile",
+					crossDomain:true,
+					statusCode: {
+						401: dlsAuthFail
+					}
+				}).done(function(){
+					jQ.ajax({
+						url:dlsUrl,
+						crossDomain:true,
+						statusCode: {
+							401: dlsAuthFail
+						}
+					}).done(function(d,t,j){
+						dlsPageLoaded(d,t,j);
+					});
+				});
+			} else {
+				//dlsLoginSanityCheck=0;
+				return;
+			}
+		}
+
+		//dlsLoginSanityCheck=0;
+
 		const tr=d.next().find("tr:gt(0)");
 		tr.each(function(i){
 			media=true;
@@ -323,24 +359,11 @@ function main() {
 		}
 	};	
 
-	showRecentActivityPopup = function() {
-		const trigger=jQ("#theasis_recentActivityLink").parent();
-		const popup=jQ("#theasis_recentActivityPopup");
-		const position=trigger.position();
-		// console.log("position: " + (position.left+trigger.width()) + " " + (position.top+trigger.height()-2));
-		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
-	};
-	
-	hideRecentActivityPopup = function() {
-		jQ("#theasis_recentActivityPopup").hide(300);
-	};
-	
 	addCountToToolbar = function() {
 		const accountLi = jQ("nav.micro ul:first li:eq(1)");
-		const accountUrl = accountLi.find("a:first").attr("href");
+		const accountUrl = accountLi.find("a:first").attr("href").replace("http:","https:");
 		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' class='theasis_popupSummary'>History</div>");
 		jQ("body").append("<div id='theasis_batchPopup' class='theasis_popupSummary'>Batches</div>");
-		jQ("body").append("<div id='theasis_recentActivityPopup' class='theasis_popupSummary'>Recent Activity</div>");
 		jQ('#theasis_batchPopup').hover(
 			showBatches,
 			hideBatches
@@ -359,10 +382,6 @@ function main() {
 
 	addRecentActivityToToolbar = function() {
 		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_recentActivityLink' href='https://esp.gettyimages.com/app/stats'></a></li>");
-		jQ('#theasis_recentActivityLink').parent().hover(
-			showRecentActivityPopup,
-			hideRecentActivityPopup
-			);
 	};
 	
 	dlsAuthFail = function() {
@@ -421,7 +440,7 @@ function main() {
 		then = new Date(Date.now() - (1000*3600*24*7*13)); // 13 weeks ago
 		nowish = new Date(Date.now() + (1000*3600*24)); // tomorrow
 		jQ.ajax({
-			url:"https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID,
+			url:dlsUrl,
 			statusCode: {
 				401: dlsAuthFail
 			}
@@ -446,20 +465,6 @@ function main() {
 
 	recentActivityLoaded = function(data) {
 		const now = Date.now();
-		if (!recentActivityHistory.history) {
-			//recentActivityHistory.history=[];
-			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityLoaded***");
-			return;
-		}
-		if (!recentActivityHistory.trend) {
-			// recentActivityHistory.trend=[];
-			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityLoaded***");
-			return;
-		}
-		const hist = recentActivityHistory.history;
-		const trend = recentActivityHistory.trend;
-		let inter=0;
-		let views=0;
 		if (data) {
 			if (data['total_interactions']) {
 				inter = recentActivityHistory.interactions.total = data['total_interactions'];
@@ -467,79 +472,17 @@ function main() {
 			if (data['total_views']) {
 				views = recentActivityHistory.views.total = data['total_views'];
 			}
-			if ((inter>0 || views>0) && (hist.length<1 || !hist[0] || hist[0].interactions!=inter || hist[0].views!=views)) {
-				if (hist.unshift({when:now,interactions:inter,views:views}) > 30) {
-					hist.pop();
-				}
-				const currentTrend=median(hist.slice(0,7));
-				if (trend.unshift({when:now,interactions:currentTrend.interactions,views:currentTrend.views}) > 370) {
-					trend.pop();
-				}
-			}
 			showRecentActivity();
-			chrome.storage.local.set({'recentActivityHistory':recentActivityHistory});		
 		}
-		updateRecentActivityHistory(hist,trend);
 	}
-
-	updateRecentActivityHistory = function(hist_items,trend_items) {
-		const div=jQ("#theasis_recentActivityPopup");
-		const oneDay=1000*60*60*24; // milliseconds in a day
-		let date=Date.now();
-		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>Trend</th><th>Interactions</th><th>Trend</th></tr>";
-		for(let i=0;i<hist_items.length;++i) {
-			item=hist_items[i];
-			trendItem=trend_items.length>i?trend_items[i]:{interactions:'-',views:'-'};
-			const d = shortDateStr(new Date(item.when - oneDay));
-			html += "<tr><td><i>"+d+"</i></td><td>"+item.views+"</td><td>"+trendItem.views+"</td><td>"+item.interactions+"</td><td>"+trendItem.interactions+"</td></tr>";
-		};
-		html += "</table>";
-		div.html(html);
-	};
 
 	showRecentActivity = function() {
 		const link=jQ("#theasis_recentActivityLink");
 		const views = recentActivityHistory.views.total;
 		const interactions = recentActivityHistory.interactions.total;
-		const viewTrend = (recentActivityHistory.trend && recentActivityHistory.trend.length>1) ? recentActivityHistory.trend[0].views : null;
-		const interactionTrend = (recentActivityHistory.trend && recentActivityHistory.trend.length>1) ? recentActivityHistory.trend[0].interactions : null;
-		let viewsStyle=interStyle="#fff";
-		if (recentActivityHistory.history && recentActivityHistory.history.length>1) {
-			if (recentActivityHistory.history[1].interactions<interactions) {
-				interStyle="#53c043"
-			} else if (recentActivityHistory.history[1].interactions>interactions) {
-				interStyle="#c05343"
-			}
-			if (recentActivityHistory.history[1].views<views) {
-				viewsStyle="#53c043"
-			} else if (recentActivityHistory.history[1].views>views) {
-				viewsStyle="#c05343"
-			}
-		}
-		let interactionTrendInfo = viewTrendInfo = "";
-		if (viewTrend) {
-			let trendStyle="#fff";
-			if (recentActivityHistory.trend[1].views<viewTrend) {
-				trendStyle="#53c043"
-			} else if (recentActivityHistory.trend[1].views>viewTrend) {
-				trendStyle="#c05343"
-			}
-			let perday = Math.round(viewTrend/30);
-			viewTrendInfo = "<span style='color:#888;'> [</span><span style='color:"+trendStyle+";'>"+perday+"</span><span style='color:#888; padding-right:1em;'>/day] </span>";
-		}
-		if (interactionTrend) {
-			let trendStyle="#fff";
-			if (recentActivityHistory.trend[1].interactions<interactionTrend) {
-				trendStyle="#53c043"
-			} else if (recentActivityHistory.trend[1].interactions>interactionTrend) {
-				trendStyle="#c05343"
-			}
-			let perday = Math.round(interactionTrend/30);
-			interactionTrendInfo = "<span style='color:#888;'> [</span><span style='color:"+trendStyle+";'>"+perday+"</span><span style='color:#888; padding-right:1em;'>/day] </span>";
-		}
-		const text = "<span style='color:#888;'>Views:</span><span style='color:"+viewsStyle+";'>" +
-					views + "</span> " + viewTrendInfo + "</span><span style='color:#888;'>Interactions:</span><span style='color:"+interStyle+";'>" +
-					interactions + "</span>" + interactionTrendInfo;
+		const text = "<span style='color:#888;'>Views:</span>" +
+					views + " <span style='color:#888;'>Interactions:</span>" +
+					interactions + "</span>";
 		link.html(text);
 		link.show();
 	}
@@ -570,20 +513,8 @@ function main() {
 			batchHistory=obj.batchHistory;
 		}
 	};
-	
-	recentActivityHistoryLoaded = function(obj) {
-		if (obj.recentActivityHistory) {
-			recentActivityHistory=obj.recentActivityHistory;
-		}
-		if (!recentActivityHistory.trend) {
-			// recentActivityHistory.trend=[];
-			console.log("***Theasis ESP Nav Bar Error: no trend array in recentActivityHistoryLoaded***");
-		}
-
-	};
-	
+		
 	chrome.storage.local.get('batchHistory',batchHistoryLoaded);
-	chrome.storage.local.get('recentActivityHistory',recentActivityHistoryLoaded);
 	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
