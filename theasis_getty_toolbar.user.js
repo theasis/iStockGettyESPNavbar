@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.3.19
+// version 0.4.1
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -66,10 +66,15 @@
 //		  Fixes for Account Management authorisation changes
 // v0.3.19 25 Jan 2018
 //		  Show DLs per "day"
+// v0.4.0 14 Feb 2018
+//		  Views/Interactions are back
+// v0.4.1 15 Feb 2018
+//		  Graphs of daily(ish) downloads
 // 
 //
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.3.19";
-var itsme=document.cookie.replace(/(?:(?:^|.*;\s*)dn\s*=\s*([^;]*).*$)|^.*$/,"$1")==="Martin+McCarthy";
+'use strict';
+
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.1";
 var currentDLs={};
 var targetDetailsHtml="";
 var dlRates=[25,30,35,40,45];
@@ -82,21 +87,54 @@ var updateInterval = 10 * 60 * 1000; // every 10 minutes
 var recentActivityUpdateInterval = 1 * 3600 * 1000; // every 1 hour
 var batchHistory={};
 var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[]};
-var espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
-var dlsUrl="https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID;
+const espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
+const dlsUrl="https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID;
+const statsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
 var dlsLoginSanityCheck=0;
+
+// Views & Interactions
+var lastChecked=0;
+var views=0;
+var interactions=0;
+var storedHistory={};
+var currentTrend=null;
+var lastTrend=null;
+
+// sync storage objects are keyed on the string "MM-DD", so there can be up to 366 values saved
+// object contains e.g.: { date:20180211, views:1234, interactions:123 }
+// so it's necessary to check 'date' to ensure that any history is actually recent history
+class ViewInt {
+	constructor(views,interactions,date) {
+		this.name="ViewInt";
+		this.views=views;
+		this.interactions=interactions;
+		this.date=date||yyyymmdd();
+	}
+
+	key() {
+		return this.date.slice(4,6)+"-"+this.date.slice(6);
+	}
+
+	toStorage() {
+		return 	{
+					'date':this.date,
+					'views':this.views,
+					'interactions':this.interactions
+				};
+	}
+}
 
 function main() {
 
-	lastUpdated = function() {
+	var lastUpdated = function() {
 		return "\nLast updated: "+new Date().toTimeString();
 	};
 	
-	setCss = function() {
+	var setCss = function() {
 		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; } #theasis_recentActivityTable td { color:#000; text-align:right; } </style>");
 	};
 	
-	dlsPageLoaded = function(data,textStatus,jqXHR) {
+	var dlsPageLoaded = function(data,textStatus,jqXHR) {
 		const html=jQ(data);
 		const d=html.find("h3").eq(1);
 		const now=Date.now();
@@ -214,7 +252,7 @@ function main() {
 	var then;
 	var nowish;
 	var batchIds;
-	espDataLoaded = function(data) {
+	var espDataLoaded = function(data) {
 		if (page == 1) {
 			stats = {
 				batches:data.meta.total_items,
@@ -262,13 +300,13 @@ function main() {
 		}
 	};
 	
-	checkForSplus = function(batchIds) {
+	var checkForSplus = function(batchIds) {
 		for (let bidObj of batchIds) {
 			getBatch(bidObj);
 		}
 	};
 	
-	getBatch = function(bidObj) {
+	var getBatch = function(bidObj) {
 		if (!batchHistory[bidObj.id] || batchHistory[bidObj.id].updated!=bidObj.updated) {
 			jQ.ajax({
 				url:"https://esp.gettyimages.com/api/submission/v1/submission_batches/"+bidObj.id+"/contributions?page=1&pages_size=200&"+scriptID
@@ -279,7 +317,7 @@ function main() {
 		}
 	};
 	
-	batchRead = function(batchData,bidObj) {
+	var batchRead = function(batchData,bidObj) {
 		let batch={updated:bidObj.updated};
 		let bid = bidObj.id;
 		let batchStatus = bidObj.status;
@@ -301,7 +339,7 @@ function main() {
 		chrome.storage.local.set({'batchHistory':batchHistory});
 	};
 	
-	showSplus = function(bid,accepted,nominated) {
+	var showSplus = function(bid,accepted,nominated) {
 		if (accepted>0) {
 			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br><span class="theasis_batchSplus">('+accepted+' S+)</span>');
 		}
@@ -310,28 +348,33 @@ function main() {
 		}
 	};
 
-	showRejects = function(bid,rejected) {
+	var showRejects = function(bid,rejected) {
 		if (rejected>0) {
 			jQ('#theasis_batchRow'+bid+' .theasis_batchReviewed').append('<br><span class="theasis_batchReject">('+rejected+' Rej)</span>');
 		}
 	}
 	
-	updateHistory = function(items) {
+	var updateHistory = function(items) {
 		const div=jQ("#theasis_historyPopup");
 		const oneDay=1000*3600*24;
 		let date=Date.now()-13*oneDay;
 		let html="<div id='theasis_dlTargetInfo'>"+targetDetailsHtml+"</div><table>";
 		let rowsHtml="";
 		let previousTotal={Photo:null,Illustration:null,Video:null};
+		let dailyData={Label:[],Photo:[],Illustration:[],Video:[]};
 		for (let i=0;i<14;++i) {
 			const key = shortDateStr(new Date(date));
 			if (items[key]) {
 				let rowHtml = "<tr><td><i>"+key+"</i></td>";
+				dailyData.Label[i]=key.slice(-2);
 				for (let l in items[key]) {
 					let dayDls = "";
-					dayDls=" ["+(items[key][l]-previousTotal[l])+"]";
+					let diff=items[key][l]-previousTotal[l];
+					dayDls=" ["+diff+"]";
 					if (previousTotal[l]===null) {
 						dayDls="";
+					} else {
+						dailyData[l][i]=diff;
 					}
 					previousTotal[l]=items[key][l];
 					rowHtml += "<td><span style='padding-left:1em;'>"+l+": <b>"+items[key][l]+dayDls+"</b></span></td>";
@@ -344,9 +387,47 @@ function main() {
 		}
 		html += rowsHtml + "</table>";
 		div.html(html);
+
+		html += "<div class='ct-chart' id='PhotoChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
+		html += "<div class='ct-chart' id='IllustrationChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Illustrations</span></div></div>";
+		html += "<div class='ct-chart' id='VideoChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Videos</span></div></div>";
+		div.html(html);
+
+		let chartOptions={
+			width:""+Math.max(dailyData.Label.length*20,200)+"px",
+			height:"120px"
+		};
+
+		if (previousTotal.Photo===null || previousTotal.Photo===0) {
+			jQ("#PhotoChart").css({display:"none"});
+		} else {
+			new Chartist.Line('#PhotoChart',
+			{
+				labels: dailyData.Label,
+				series: [dailyData.Photo]
+			}, chartOptions);
+		}
+		if (previousTotal.Illustration===null || previousTotal.Illustration===0) {
+			jQ("#IllustrationChart").css({display:"none"});
+		} else {
+			new Chartist.Line('#IllustrationChart',
+			{
+				labels: dailyData.Label,
+				series: [dailyData.Illustration]
+			}, chartOptions);
+		}
+		if (previousTotal.Video===null || previousTotal.Video===0) {
+			jQ("#VideoChart").css({display:"none"});
+		} else {
+			new Chartist.Line('#VideoChart',
+			{
+				labels: dailyData.Label,
+				series: [dailyData.Video]
+			}, chartOptions);
+		}
 	};
 	
-	showDlHistory = function() {
+	var showDlHistory = function() {
 		const popup = jQ("#theasis_historyPopup");
 		const trigger=jQ("#theasis_accountLink").parent();
 		const position=trigger.position();
@@ -355,11 +436,11 @@ function main() {
 		chrome.storage.sync.get(null,updateHistory);
 	};
 	
-	hideDlHistory = function() {
+	var hideDlHistory = function() {
 		jQ("#theasis_historyPopup").hide(300);
 	};
 	
-	showBatches = function() {
+	var showBatches = function() {
 		const trigger=jQ("#theasis_espLink").parent();
 		const popup=jQ("#theasis_batchPopup");
 		const position=trigger.position();
@@ -367,13 +448,13 @@ function main() {
 		popup.css({left:""+(position.left-100)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
 	};
 	
-	hideBatches = function() {
+	var hideBatches = function() {
 		if (!jQ("#theasis_batchPopup").is(":hover") && !jQ("#theasis_espLink").parent().is(":hover")) {
 			jQ("#theasis_batchPopup").hide(300);
 		}
 	};	
 
-	addCountToToolbar = function() {
+	var addCountToToolbar = function() {
 		const accountLi = jQ("nav.micro ul:first li:eq(1)");
 		const accountUrl = accountLi.find("a:first").attr("href").replace("http:","https:");
 		jQ("body").css({position:"relative"}).append("<div id='theasis_historyPopup' class='theasis_popupSummary'>History</div>");
@@ -387,25 +468,26 @@ function main() {
 			showDlHistory,
 			hideDlHistory
 			);
+		jQ("body").append("<div id='theasis_viewsStatsPopup' class='theasis_popupSummary'>Views/Interactions History</div>");
 		updateCount();
 	};
 	
-	addMessagesToToolbar = function() {
+	var addMessagesToToolbar = function() {
 		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_messagesLink' href='https://accountmanagement.gettyimages.com/Messages/Messages'></a></li>");
 	};
 
-	addRecentActivityToToolbar = function() {
+	var addRecentActivityToToolbar = function() {
 		jQ("#theasis_accountLink").parent().after("<li><a id='theasis_recentActivityLink' href='https://esp.gettyimages.com/app/stats'></a></li>");
 	};
 	
-	dlsAuthFail = function() {
+	var dlsAuthFail = function() {
 		const accountLi = jQ("nav.micro ul:first li:eq(1)");
 		const accountUrl = accountLi.find("a:first").attr("href");
 		accountLi.replaceWith( "<li><a href='"+accountUrl+"'>Account log in</a></li>" );
 		updateCount();
 	};
 	
-	addEspToToolbar = function(stats) {
+	var addEspToToolbar = function(stats) {
 		const when=lastUpdated();
 		const espLi = jQ("nav.micro ul:first li:first");
 		const espUrl = espLi.find("a:first").attr("href");
@@ -417,30 +499,23 @@ function main() {
 			);
 	};
 	
-	espAuthFail = function() {
+	var espAuthFail = function() {
 		const espLi = jQ("nav.micro ul:first li:first");
 		const espUrl = espLi.find("a:first").attr("href");
 		let html = "<li><a href='"+espUrl+"'>ESP: log in</a></li>";
 		espLi.replaceWith( html );
 	}
 	
-	addForumToToolbar = function() {
+	var addForumToToolbar = function() {
 			jQ("nav.micro ul:first").append( "<li><a href='https://contributors.gettyimages.com/forum/'><span>Forum</span></a></li>" );
 	};
 	
-	shortDateStr = function(d) {
+	var shortDateStr = function(d) {
 		let date = d ? d : new Date();
 		return dateStr(date).substr(5);
 	};
 	
-	dateStr = function(date) {
-		let y = date.getFullYear();
-		let m = date.getMonth()+1;
-		let d = date.getDate();
-		return ''+y+'-'+(m<10?'0':'')+m+'-'+(d<10?'0':'')+d;
-	};
-	
-	doDls = function() {
+	var doDls = function() {
 		jQ.ajax({
 			url:"https://esp.gettyimages.com/api/submission/v1/submission_batches?date_from="+dateStr(then)+"&date_to="+dateStr(nowish)+"&page="+page+"&page_size=20&sort_column=created_at&sort_order=DESC&"+scriptID,
 			statusCode: {
@@ -449,7 +524,7 @@ function main() {
 		}).done(espDataLoaded);
 	};
 	
-	updateCount = function() {
+	var updateCount = function() {
 		const d = new Date();
 		then = new Date(Date.now() - (1000*3600*24*7*13)); // 13 weeks ago
 		nowish = new Date(Date.now() + (1000*3600*24)); // tomorrow
@@ -461,53 +536,174 @@ function main() {
 		}).done(dlsPageLoaded);
 		page=1;
 		doDls();
-		doRecentActivity();
+		doStats();
 		updateMessageCount();
 	};
 
-	doRecentActivity = function() {
+	var doStats = function() {
 		const now = Date.now();
 		// always make sure we're up-to-date if we're looking at the actual stats page
-		if (window.location.pathname.startsWith("/app/stats") || now > recentActivityHistory.lastChecked+recentActivityUpdateInterval) {
-			recentActivityHistory.lastChecked=now;
+		if (window.location.pathname.startsWith("/app/stats") || now > lastChecked+updateInterval) {
+			lastChecked=now;
 			jQ.ajax({
-				url:espStatsUrl // scriptID is included already!
-			}).done(recentActivityLoaded);
+				url:statsUrl // scriptID is included already!
+			}).done(statsLoaded);
 		}
-		showRecentActivity();
+		showStats();
 	};
 
-	recentActivityLoaded = function(data) {
+	var statsLoaded = function(data) {
 		const now = Date.now();
 		if (data) {
 			if (data['total_interactions']) {
-				inter = recentActivityHistory.interactions.total = data['total_interactions'];
+				interactions = data['total_interactions'];
 			}
 			if (data['total_views']) {
-				views = recentActivityHistory.views.total = data['total_views'];
+				views = data['total_views'];
 			}
-			showRecentActivity();
+			let vi = new ViewInt(views,interactions);
+			storedHistory[vi.date]=vi.toStorage();
+			let json={};
+			json[vi.key()]=vi.toStorage();
+			chrome.storage.local.set(json,function(){ console.log('saved ' + vi.toStorage());});
 		}
-	}
+		updateRecentActivityHistory();
+		window.setTimeout(doStats, updateInterval);
+		showStats();
+	};
 
-	showRecentActivity = function() {
+	var updateRecentActivityHistory = function() {
+		const div=jQ("#theasis_viewsStatsPopup");
+		const oneDay=1000*60*60*24; // milliseconds in a day
+		let gData={v:[],i:[],vtrend:[],itrend:[],labels:[]}
+		let date=Date.now();
+		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>(Trend/d)</th><th>Interactions</th><th>(Trend/d)</th></tr>";
+		let keys=Object.keys(storedHistory);
+		keys.sort(function(a,b){return b-a;});
+		for(let i=0, l=keys.length; i<l && i<14; ++i) {
+			let key=keys[i];
+			let item=storedHistory[key];
+			let trend=medianFromKeys(keys.slice(i,i+7));
+			if (i===0) {
+				currentTrend=trend;
+			} else if (i===1) {
+				lastTrend=trend;
+			}
+			gData.labels.unshift(key.slice(-2));
+			gData.v.unshift(item.views);
+			gData.vtrend.unshift(trend.views);
+			gData.i.unshift(item.interactions);
+			gData.itrend.unshift(trend.interactions);
+			html += "<tr><td><tt>"+keyToDate(key)+"</tt></td><td>"+item.views+"</td><td>("+Math.round(trend.views/30)+")</td><td>"+item.interactions+"</td><td>("+Math.round(trend.interactions/30)+")</td></tr>";
+		}
+		html += "</table>";
+		html += "<div class='ct-chart' id='viewschart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Views</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
+		html += "<div class='ct-chart' id='interschart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Interactions</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
+		div.html(html);
+
+		let labels=[], data=[];
+		for(let i=0,l=keys.length;i<l;++i) {
+			let k=keys[i];
+			data.push(storedHistory[k].views);
+			labels.push(k.slice(-2));
+		}
+		let chartOptions={
+			width:""+Math.max(labels.length*20,200)+"px",
+			height:"160px"
+		};
+
+		new Chartist.Line('#viewschart',
+		{
+			labels: gData.labels,
+			series: [gData.v,gData.vtrend]
+		}, chartOptions);
+		new Chartist.Line('#interschart',
+		{
+			labels: gData.labels,
+			series: [gData.i,gData.itrend]
+		}, chartOptions);
+	};
+
+	var showStats = function() {
 		const link=jQ("#theasis_recentActivityLink");
-		const views = recentActivityHistory.views.total;
-		const interactions = recentActivityHistory.interactions.total;
-		const text = "<span style='color:#888;'>Views:</span>" +
-					views + " <span style='color:#888;'>Interactions:</span>" +
-					interactions + "</span>";
+		let viewsStyle="#fff";
+		let interStyle="#fff";
+		let viewsTrendStyle="#fff";
+		let interTrendStyle="#fff";
+
+		let keys=Object.keys(storedHistory);
+		keys.sort(function(a,b){return b-a;});
+
+		if (keys.length>1) {
+			interStyle=statStyle(storedHistory[keys[1]].interactions,interactions);
+			viewsStyle=statStyle(storedHistory[keys[1]].views,views);
+		}
+		let vTrend = "", iTrend = "";
+		if (currentTrend) {
+			vTrend = " ("+Math.round(currentTrend.views/30)+")";
+			iTrend = " ("+Math.round(currentTrend.interactions/30)+")";
+			if (lastTrend) {
+				viewsTrendStyle=statStyle(lastTrend.views,currentTrend.views);
+				interTrendStyle=statStyle(lastTrend.interactions,currentTrend.interactions);
+			}
+		}
+		const text = "<span style='color:#888888'>Views:</span><span style='color:"+viewsStyle+";'>" + views
+				+ "</span><span style='padding-right:1em; color:"+viewsTrendStyle+";'>" + vTrend
+				+ "</span><span style='color:#888888'>Ints:</span><span style='color:"+interStyle+";'>" + interactions
+				+ "</span><span style='color:"+interTrendStyle+";'>" + iTrend + "</span>";
 		link.html(text);
 		link.show();
-	}
+		link.hover(
+			showStatsHistory,
+			hideStatsHistory
+			);
+	};
+
+	var showStatsHistory = function() {
+		const popup = jQ("#theasis_viewsStatsPopup");
+		const trigger=jQ("#theasis_recentActivityLink");
+		const position=trigger.position();
+		popup.css({left:""+(position.left-250)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
+	};
 	
-	updateMessageCount = function() {
+	var hideStatsHistory = function() {
+		jQ("#theasis_viewsStatsPopup").hide(300);
+	};
+
+	const GOODKEY=/^\d\d-\d\d$/;
+	var recentActivityHistoryLoaded = function(obj) {
+		if (obj) {
+			let keys=Object.keys(obj);
+			for(let i=0, l=keys.length;i<l;++i) {
+				if (GOODKEY.test(keys[i])) {
+					let o=obj[keys[i]];
+					storedHistory[o.date]={views:o.views,interactions:o.interactions};
+				}
+			}
+
+			updateRecentActivityHistory();
+		}
+	};
+	
+	var shortDateStr = function(d) {
+		let date = d ? d : new Date();
+		return dateStr(date).substr(5);
+	};
+	
+	var dateStr = function(date) {
+		let y = date.getFullYear();
+		let m = date.getMonth()+1;
+		let d = date.getDate();
+		return ''+y+'-'+(m<10?'0':'')+m+'-'+(d<10?'0':'')+d;
+	};
+
+	var updateMessageCount = function() {
 		jQ.ajax({
 			url:"https://accountmanagement.gettyimages.com/Messages/GetUnreadMessageCount?"+scriptID
 		}).done(messagesDataLoaded);
 	};
 	
-	messagesDataLoaded = function(data) {
+	var messagesDataLoaded = function(data) {
 		let count=0;
 		const link=jQ("#theasis_messagesLink");
 		if (data && data['UnreadCount']) {
@@ -522,13 +718,14 @@ function main() {
 		}
 	};
 	
-	batchHistoryLoaded = function(obj) {
+	var batchHistoryLoaded = function(obj) {
 		if (obj.batchHistory) {
 			batchHistory=obj.batchHistory;
 		}
+		recentActivityHistoryLoaded(obj);
 	};
 		
-	chrome.storage.local.get('batchHistory',batchHistoryLoaded);
+	chrome.storage.local.get(null,batchHistoryLoaded);
 	setCss();
 	addCountToToolbar();
 	addForumToToolbar();
@@ -541,6 +738,14 @@ function main() {
 function addJQuery(callback) {
 	window.jQ=jQuery.noConflict(true);
 	main(); 
+}
+
+function medianFromKeys(keys) {
+	let vals=[];
+	keys.forEach(function(k){
+		vals.push(storedHistory[k]);
+	});
+	return median(vals);
 }
 
 function median(values) {
@@ -561,6 +766,29 @@ function median(values) {
 		val.views = (values[half-1].views+values[half].views)/2;
 	}
 	return val;
+}
+
+// returns a string of todays date in the form YYYYMMDD
+function yyyymmdd() {
+	let date=new Date();
+	let day=("0"+date.getDate()).slice(-2);
+	let month=("0"+(date.getMonth()+1)).slice(-2);
+	let year=date.getFullYear();
+	return ""+year+month+day;
+}
+
+function keyToDate(key) {
+	return key.slice(0,4)+"-"+key.slice(4,6)+"-"+key.slice(6);
+}
+
+// return a CSS colour comparing (oldval,newval)
+function statStyle(a,b) {
+	if (a<b) {
+		return "#53c043"
+	} else if (a>b) {
+		return "#c05343"
+	}
+	return "#fff";
 }
 
 addJQuery(main);
