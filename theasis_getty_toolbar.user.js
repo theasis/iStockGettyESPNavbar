@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.4.1
+// version 0.4.3
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -68,13 +68,15 @@
 //		  Show DLs per "day"
 // v0.4.0 14 Feb 2018
 //		  Views/Interactions are back
-// v0.4.1 15 Feb 2018
+// v0.4.2 15 Feb 2018
 //		  Graphs of daily(ish) downloads
+// v0.4.3 22 Feb 2018
+//		  Fix for size=0 request to app/stats returning no metadata
 // 
 //
 'use strict';
 
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.1";
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.3";
 var currentDLs={};
 var targetDetailsHtml="";
 var dlRates=[25,30,35,40,45];
@@ -89,7 +91,7 @@ var batchHistory={};
 var recentActivityHistory={lastChecked:0,views:{total:0},interactions:{total:0},history:[]};
 const espStatsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
 const dlsUrl="https://accountmanagement.gettyimages.com/Account/Profile?"+scriptID;
-const statsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=0&"+scriptID;
+const statsUrl="https://esp.gettyimages.com/ui/statistics/recent_activity?size=1&"+scriptID;
 var dlsLoginSanityCheck=0;
 
 // Views & Interactions
@@ -358,7 +360,11 @@ function main() {
 		const div=jQ("#theasis_historyPopup");
 		const oneDay=1000*3600*24;
 		let date=Date.now()-13*oneDay;
-		let html="<div id='theasis_dlTargetInfo'>"+targetDetailsHtml+"</div><table>";
+		let html="<div id='theasis_dlTargetInfo'><table><tr>";
+		html += "<td><div class='ct-chart' id='PhotoChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
+		html += "<div class='ct-chart' id='IllustrationChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Illustrations</span></div></div>";
+		html += "<div class='ct-chart' id='VideoChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Videos</span></div></div>";
+		html += "<td style='padding-left:2em;'>"+targetDetailsHtml+"<table>";
 		let rowsHtml="";
 		let previousTotal={Photo:null,Illustration:null,Video:null};
 		let dailyData={Label:[],Photo:[],Illustration:[],Video:[]};
@@ -386,11 +392,7 @@ function main() {
 			date += oneDay;
 		}
 		html += rowsHtml + "</table>";
-		div.html(html);
-
-		html += "<div class='ct-chart' id='PhotoChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
-		html += "<div class='ct-chart' id='IllustrationChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Illustrations</span></div></div>";
-		html += "<div class='ct-chart' id='VideoChart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Videos</span></div></div>";
+		html += "</td></tr></table></div>";
 		div.html(html);
 
 		let chartOptions={
@@ -431,7 +433,7 @@ function main() {
 		const popup = jQ("#theasis_historyPopup");
 		const trigger=jQ("#theasis_accountLink").parent();
 		const position=trigger.position();
-		popup.css({left:""+(position.left-50)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
+		popup.css({left:""+(position.left-150)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
 
 		chrome.storage.sync.get(null,updateHistory);
 	};
@@ -555,6 +557,7 @@ function main() {
 	var statsLoaded = function(data) {
 		const now = Date.now();
 		if (data) {
+			// console.log(data);
 			if (data['total_interactions']) {
 				interactions = data['total_interactions'];
 			}
@@ -577,7 +580,10 @@ function main() {
 		const oneDay=1000*60*60*24; // milliseconds in a day
 		let gData={v:[],i:[],vtrend:[],itrend:[],labels:[]}
 		let date=Date.now();
-		let html="<table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>(Trend/d)</th><th>Interactions</th><th>(Trend/d)</th></tr>";
+		let html="<table><tr>"
+		html += "<td><div class='ct-chart' id='viewschart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Views</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
+		html += "<div class='ct-chart' id='interschart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Interactions</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div></td>";
+		html += "<td style='padding-left:2em;'><table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>(Trend/d)</th><th>Interactions</th><th>(Trend/d)</th></tr>";
 		let keys=Object.keys(storedHistory);
 		keys.sort(function(a,b){return b-a;});
 		for(let i=0, l=keys.length; i<l && i<14; ++i) {
@@ -596,9 +602,7 @@ function main() {
 			gData.itrend.unshift(trend.interactions);
 			html += "<tr><td><tt>"+keyToDate(key)+"</tt></td><td>"+item.views+"</td><td>("+Math.round(trend.views/30)+")</td><td>"+item.interactions+"</td><td>("+Math.round(trend.interactions/30)+")</td></tr>";
 		}
-		html += "</table>";
-		html += "<div class='ct-chart' id='viewschart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Views</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
-		html += "<div class='ct-chart' id='interschart' style='background:#dff;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Interactions</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
+		html += "</table></td></tr></table>";
 		div.html(html);
 
 		let labels=[], data=[];
