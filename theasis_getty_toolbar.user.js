@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.4.5
+// version 0.4.6
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -76,11 +76,13 @@
 //		  If you won't hit the next target this year at the current rate, say what rate you need
 // v0.4.5 03 Mar 2018
 //		  Ignore old data - track the year
+// v0.4.6 05 Mar 2018
+//		  Graph formatting fixes
 // 
 //
 'use strict';
 
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.5";
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.6";
 const MIDDECEMBER=350; // number of days to mid-December
 var currentDLs={};
 var targetDetailsHtml="";
@@ -138,7 +140,7 @@ function main() {
 	};
 	
 	var setCss = function() {
-		jQ('head').append("<style type='text/css'>div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 120%; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; } #theasis_recentActivityTable td { color:#000; text-align:right; } </style>");
+		jQ('head').append("<style type='text/css'>nav.micro li a { text-decoration: none; } div.theasis_popupSummary td { font-size: 13px; line-height:normal; padding: 1px; } div.theasis_popupSummary { font-family:proxima-nova, Helvetica Neue, Arial, sans serif; font-size: 13px; line-height:normal; position:absolute; display:none; top:30px; right:100px; background-color:#dde0e0; color:#333333; padding:2ex; opacity:0.95; border-radius: 3px; box-shadow: 1px 0px 3px 3px #666; z-index:10000; } #theasis_batchesTable td { padding:1ex; color:#fff; text-align:right; } #theasis_batchesTable th { padding:0.5ex; color:#000; background-color:#ccc; } #theasis_batchesTable td.theasis_batchName { background-color:#333; text-align:left; } td.theasis_batchCount { background-color:#555; } td.theasis_batchSubs { background-color:#1aabec; } td.theasis_batchReviewed { background-color:#53c04c; } td.theasis_batchWaiting { background-color:#c09b4c; } td.theasis_batchRevisable { background-color:#c0534c; } #theasis_batchesTable span.theasis_batchUpdatedLabel { font-size:90%; color: #aaa; } span.theasis_batchUpdated { font-style:italic; font-size:80%; color: #8ac; } span.theasis_batchSplus { font-style: italic; color: #235; } span.theasis_batchReject { font-style: italic; color: #532; } #theasis_messagesLink { color:#fc3; } #theasis_recentActivityTable td { color:#000; text-align:right; } </style>");
 	};
 	
 	var dlsPageLoaded = function(data,textStatus,jqXHR) {
@@ -378,9 +380,9 @@ function main() {
 		const year=new Date().getUTCFullYear();
 		let date=Date.now()-13*oneDay;
 		let html="<div id='theasis_dlTargetInfo'><table><tr>";
-		html += "<td><div class='ct-chart' id='PhotoChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
-		html += "<div class='ct-chart' id='IllustrationChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Illustrations</span></div></div>";
-		html += "<div class='ct-chart' id='VideoChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Videos</span></div></div>";
+		html += "<td><div class='ct-chart' id='PhotoChart' style='background:#dff; width:380px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
+		html += "<div class='ct-chart' id='IllustrationChart' style='background:#dff; width:380px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Illustrations</span></div></div>";
+		html += "<div class='ct-chart' id='VideoChart' style='background:#dff; width:380px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Videos</span></div></div>";
 		html += "<td style='padding-left:2em;'>"+targetDetailsHtml+"<table>";
 		let rowsHtml="";
 		let previousTotal={Photo:null,Illustration:null,Video:null};
@@ -602,8 +604,8 @@ function main() {
 		let gData={v:[],i:[],vtrend:[],itrend:[],labels:[]}
 		let date=Date.now();
 		let html="<table><tr>"
-		html += "<td><div class='ct-chart' id='viewschart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Views</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
-		html += "<div class='ct-chart' id='interschart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Interactions</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div></td>";
+		html += "<td><div class='ct-chart' id='viewschart' style='background:#dff; width:380px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Views</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div>";
+		html += "<div class='ct-chart' id='interschart' style='background:#dff; width:380px;'><div style='text-align:center; font-weight:bold; padding-top:8px; margin-top:2px;'><span style='color:rgb(215, 2, 6);'>Interactions</span> &amp; <span style='color:rgb(80, 91, 175);'>Trend</span></div></div></td>";
 		html += "<td style='padding-left:2em;'><table id='theasis_recentActivityTable'><tr><th>30 Days To&hellip;</th><th>Views</th><th>(Trend/d)</th><th>Interactions</th><th>(Trend/d)</th></tr>";
 		let keys=Object.keys(storedHistory);
 		keys.sort(function(a,b){return b-a;});
@@ -688,7 +690,7 @@ function main() {
 		const popup = jQ("#theasis_viewsStatsPopup");
 		const trigger=jQ("#theasis_recentActivityLink");
 		const position=trigger.position();
-		popup.css({left:""+(position.left-250)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
+		popup.css({left:""+(position.left-350)+"px",top:""+(position.top+trigger.height()+8)+"px",right:"auto"}).show(100);
 	};
 	
 	var hideStatsHistory = function() {
