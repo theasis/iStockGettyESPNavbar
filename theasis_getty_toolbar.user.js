@@ -1,5 +1,5 @@
 // Copyright (c) Martin McCarthy 2017,2018
-// version 0.4.3
+// version 0.4.5
 // Chrome Browser Script
 //
 // Make some tweaks to (potentially) improve the iStock contributor pages on gettyimages.com.
@@ -72,11 +72,16 @@
 //		  Graphs of daily(ish) downloads
 // v0.4.3 22 Feb 2018
 //		  Fix for size=0 request to app/stats returning no metadata
+// v0.4.4 02 Mar 2018
+//		  If you won't hit the next target this year at the current rate, say what rate you need
+// v0.4.5 03 Mar 2018
+//		  Ignore old data - track the year
 // 
 //
 'use strict';
 
-const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.3";
+const scriptID="plugin=theasis-chrome-getty-toolbar-0.4.5";
+const MIDDECEMBER=350; // number of days to mid-December
 var currentDLs={};
 var targetDetailsHtml="";
 var dlRates=[25,30,35,40,45];
@@ -204,14 +209,23 @@ function main() {
 						}
 						currentRate=i;
 					}
-					targetDetails[l] = "<br>Current " + l + " royalty rate: " + rrate;
+					targetDetails[l] = "Current " + l + " royalty rate: " + rrate;
 					targetDetails[l] += "<br>" + (year+1) + " " + l + " royalty rate: " + dlRates[currentRate] + "%";
 					if (currentRate<dlRates.length-1) {
 						const dlsToNextTarget = dlTargets[l][currentRate+1]-v;
 						const dlsPerDay=v/day_of_year;
 						const daysToGo=Math.ceil(dlsToNextTarget/dlsPerDay);
+						let safeRateText="";
+						const daysLeft=MIDDECEMBER-day_of_year;
+						if (daysLeft>1) {
+							const safeRate = Math.ceil(dlsToNextTarget/daysLeft);
+							if (safeRate>dlsPerDay) {
+								safeRateText="You need " + safeRate + " DL" + (safeRate===1?'':'s') +" per day to safely get there.<br>"
+							}
+						}
 						targetDetails[l] += "<br>Next royalty level at " + dlTargets[l][currentRate+1] + " (" + dlsToNextTarget + " to go)." +
-							"<br>That will take " + daysToGo + " days at "+Math.round(dlsPerDay)+" DLs per day.<br>";
+							"<br>That will take " + daysToGo + " days at "+Math.round(dlsPerDay)+" DLs per day.<br>"+
+							safeRateText;
 					}
 					// console.log(targetDetails[l]);
 				}
@@ -237,7 +251,9 @@ function main() {
 			}
 		}
 		let storedObject={};
+		storedDLs.year=year;
 		storedObject[shortDateStr()]=storedDLs;
+		// console.log(storedObject);
 		try {
 			chrome.storage.sync.set(storedObject,
 				function(){
@@ -359,6 +375,7 @@ function main() {
 	var updateHistory = function(items) {
 		const div=jQ("#theasis_historyPopup");
 		const oneDay=1000*3600*24;
+		const year=new Date().getUTCFullYear();
 		let date=Date.now()-13*oneDay;
 		let html="<div id='theasis_dlTargetInfo'><table><tr>";
 		html += "<td><div class='ct-chart' id='PhotoChart' style='background:#dff; width:310px;'><div style='text-align:center; font-weight:bold; padding-top:8px;'><span style='color:rgb(215, 2, 6);'>Photos</span></div></div>";
@@ -370,10 +387,14 @@ function main() {
 		let dailyData={Label:[],Photo:[],Illustration:[],Video:[]};
 		for (let i=0;i<14;++i) {
 			const key = shortDateStr(new Date(date));
-			if (items[key]) {
+			// cope with when we didn't store the year. Remove this in a couple of weeks.
+			if (items[key] && ((!items[key].year  && key<"03-03")|| items[key].year==year)) {
 				let rowHtml = "<tr><td><i>"+key+"</i></td>";
 				dailyData.Label[i]=key.slice(-2);
 				for (let l in items[key]) {
+					if (l=="year") {
+						continue;
+					}
 					let dayDls = "";
 					let diff=items[key][l]-previousTotal[l];
 					dayDls=" ["+diff+"]";
